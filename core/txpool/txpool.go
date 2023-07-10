@@ -990,6 +990,7 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		// insufficient intrinsic gas as soon as possible and cache senders
 		// in transactions before obtaining lock
 
+		log.Info("Validat Tx!")
 		if err := pool.validateTxBasics(tx, local); err != nil {
 			errs[i] = err
 			invalidTxMeter.Mark(1)

@@ -26,12 +26,14 @@ import (
 
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/extadapter"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -55,7 +57,8 @@ const (
 	resubmitAdjustChanSize = 10
 
 	// sealingLogAtDepth is the number of confirmations before logging successful sealing.
-	sealingLogAtDepth = 7
+	// sealingLogAtDepth = 7
+	sealingLogAtDepth = 0 // Change 7 to 0
 
 	// minRecommitInterval is the minimal time interval to recreate the sealing block with
 	// any newly arrived transactions.
@@ -494,16 +497,19 @@ func (w *worker) newWorkLoop(recommit time.Duration) {
 	for {
 		select {
 		case <-w.startCh:
+			log.Info("[newWorkLoop] Receive event;w.startCh")
 			clearPending(w.chain.CurrentBlock().Number.Uint64())
 			timestamp = time.Now().Unix()
 			commit(false, commitInterruptNewHead)
 
 		case head := <-w.chainHeadCh:
+			log.Info("[newWorkLoop] Receive chainHeadEvent", "number", head.Block.Number().String())
 			clearPending(head.Block.NumberU64())
 			timestamp = time.Now().Unix()
 			commit(false, commitInterruptNewHead)
 
 		case <-timer.C:
+			log.Info("[newWorkLoop] Receive event; timer.C")
 			// If sealing is running resubmit a new work cycle periodically to pull in
 			// higher priced transactions. Disable this overhead for pending blocks.
 			if w.isRunning() && (w.chainConfig.Clique == nil || w.chainConfig.Clique.Period > 0) {
@@ -569,11 +575,14 @@ func (w *worker) mainLoop() {
 	defer cleanTicker.Stop()
 
 	for {
+		// log.Info("요 메인룹은 누가 도냐? --> Clique and normal Worker")
 		select {
 		case req := <-w.newWorkCh:
+			log.Info("[mainLoop] Receive Event: newWorkCh")
 			w.commitWork(req.interrupt, req.noempty, req.timestamp)
 
 		case req := <-w.getWorkCh:
+			log.Info("[mainLoop] Receive Event: getWorkCh")
 			block, fees, err := w.generateWork(req.params)
 			req.result <- &newPayloadResult{
 				err:   err,
@@ -581,6 +590,7 @@ func (w *worker) mainLoop() {
 				fees:  fees,
 			}
 		case ev := <-w.chainSideCh:
+			log.Info("[mainLoop] Receive Event: chainSideCh")
 			// Short circuit for duplicate side blocks
 			if _, exist := w.localUncles[ev.Block.Hash()]; exist {
 				continue
@@ -605,6 +615,7 @@ func (w *worker) mainLoop() {
 			}
 
 		case <-cleanTicker.C:
+			log.Info("[mainLoop] Receive Event: cleanTicker")
 			chainHead := w.chain.CurrentBlock()
 			for hash, uncle := range w.localUncles {
 				if uncle.NumberU64()+staleThreshold <= chainHead.Number.Uint64() {
@@ -618,6 +629,8 @@ func (w *worker) mainLoop() {
 			}
 
 		case ev := <-w.txsCh:
+			log.Info("ev := <-w.txsCh")
+			log.Info("[mainLoop] Receive Event: ev := <-w.txsCh")
 			// Apply transactions to the pending state if we're not sealing
 			//
 			// Note all transactions received may not be continuous with transactions
@@ -635,6 +648,7 @@ func (w *worker) mainLoop() {
 				}
 				txset := types.NewTransactionsByPriceAndNonce(w.current.signer, txs, w.current.header.BaseFee)
 				tcount := w.current.tcount
+				log.Info("[mainLoop] commitTransactions by w.txsCh")
 				w.commitTransactions(w.current, txset, nil)
 
 				// Only update the snapshot if any new transactions were added
@@ -684,6 +698,8 @@ func (w *worker) taskLoop() {
 	for {
 		select {
 		case task := <-w.taskCh:
+			// log.Info("SKIP task := <-w.taskCh")
+			// continue
 			if w.newTaskHook != nil {
 				w.newTaskHook(task)
 			}
@@ -703,6 +719,7 @@ func (w *worker) taskLoop() {
 			w.pendingTasks[sealHash] = task
 			w.pendingMu.Unlock()
 
+			log.Info("taskLoop 에서 seal 합니데애")
 			if err := w.engine.Seal(w.chain, task.block, w.resultCh, stopCh); err != nil {
 				log.Warn("Block sealing failed", "err", err)
 				w.pendingMu.Lock()
@@ -768,20 +785,34 @@ func (w *worker) resultLoop() {
 				}
 				logs = append(logs, receipt.Logs...)
 			}
+			log.Info("ExtraData", "len", len(block.Header().Extra), "data", hexutil.Encode(block.Header().Extra))
+
+			// recvMsg := extadapter.BroadcastBlock(block)
+			// rebuildHeader := block.Header()
+			// rebuildHeader.Extra = extadapter.EncodeExtraFieldwithNewSigs(rebuildHeader.Extra, recvMsg)
+			// endorsedBlock := block.WithSeal(rebuildHeader)
+
+			// Broadcast NewBlock's Body to Audit Chain networ
+			rebuildHeader := extadapter.BroadcastBlockAndRebuildHeader(block)
+			endorsedBlock := block.WithSeal(rebuildHeader)
+
+			// Broadcast NewBlock to internal subscriber, leading to deliver to external p2p network
+			w.mux.Post(core.NewMinedBlockEvent{Block: endorsedBlock})
+
 			// Commit block and state to database.
-			_, err := w.chain.WriteBlockAndSetHead(block, receipts, logs, task.state, true)
+			log.Info("Final Result Loop: WriteBlockAndSetHead", "receipts", len(task.receipts))
+			_, err := w.chain.WriteBlockAndSetHead(endorsedBlock, receipts, logs, task.state, true)
 			if err != nil {
 				log.Error("Failed writing block to chain", "err", err)
 				continue
 			}
-			log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash,
-				"elapsed", common.PrettyDuration(time.Since(task.createdAt)))
 
-			// Broadcast the block and announce chain insertion event
-			w.mux.Post(core.NewMinedBlockEvent{Block: block})
+			rlpEncodedBlockSize := block.Size()
+			log.Info("Successfully sealed new block", "number", endorsedBlock.Number(), "sealhash", sealhash, "hash", hash,
+				"elapsed", common.PrettyDuration(time.Since(task.createdAt)), "rlpBlkSize", rlpEncodedBlockSize)
 
 			// Insert the block into the set of pending ones to resultLoop for confirmations
-			w.unconfirmed.Insert(block.NumberU64(), block.Hash())
+			w.unconfirmed.Insert(endorsedBlock.NumberU64(), endorsedBlock.Hash())
 
 		case <-w.exitCh:
 			return
@@ -873,6 +904,7 @@ func (w *worker) commitTransaction(env *environment, tx *types.Transaction) ([]*
 	}
 	env.txs = append(env.txs, tx)
 	env.receipts = append(env.receipts, receipt)
+	log.Info("commitTransaction", "status", receipt.Status, "TxHash", receipt.TxHash.Hex()[:4], "gasUsed", receipt.GasUsed, "postState", receipt.PostState, "type", receipt.Type, "blockHash", receipt.BlockHash.Hex()[:4], "blockNumber", receipt.BlockNumber.String())
 
 	return receipt.Logs, nil
 }
@@ -888,9 +920,11 @@ func (w *worker) commitTransactions(env *environment, txs *types.TransactionsByP
 		// Check interruption signal and abort building if it's fired.
 		if interrupt != nil {
 			if signal := interrupt.Load(); signal != commitInterruptNone {
+				log.Warn("commitTransactions interrupted")
 				return signalToErr(signal)
 			}
 		}
+		// log.Warn("commitTransactions NOT interrupted")
 		// If we don't have enough gas for any further transactions then we're done.
 		if env.gasPool.Gas() < params.TxGas {
 			log.Trace("Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
@@ -1063,6 +1097,7 @@ func (w *worker) fillTransactions(interrupt *atomic.Int32, env *environment) err
 			localTxs[account] = txs
 		}
 	}
+	log.Info("Extracting Txs from Pool", "localTx", len(localTxs), "remoteTx", len(remoteTxs))
 	if len(localTxs) > 0 {
 		txs := types.NewTransactionsByPriceAndNonce(env.signer, localTxs, env.header.BaseFee)
 		if err := w.commitTransactions(env, txs, interrupt); err != nil {
@@ -1093,6 +1128,7 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, *big.Int, e
 		})
 		defer timer.Stop()
 
+		log.Info("Fill Transaction by Geth?? or PoA?")
 		err := w.fillTransactions(interrupt, work)
 		if errors.Is(err, errBlockInterruptedByTimeout) {
 			log.Warn("Block building is interrupted", "allowance", common.PrettyDuration(w.newpayloadTimeout))
@@ -1119,6 +1155,7 @@ func (w *worker) commitWork(interrupt *atomic.Int32, noempty bool, timestamp int
 			return
 		}
 	}
+	log.Info("prepareWork in commitWork()")
 	work, err := w.prepareWork(&generateParams{
 		timestamp: uint64(timestamp),
 		coinbase:  coinbase,
@@ -1161,6 +1198,7 @@ func (w *worker) commitWork(interrupt *atomic.Int32, noempty bool, timestamp int
 		return
 	}
 	// Submit the generated block for consensus sealing.
+	log.Info("Submit the generated block for consensus sealing.")
 	w.commit(work.copy(), w.fullTaskHook, true, start)
 
 	// Swap out the old work with the new one, terminating any leftover
