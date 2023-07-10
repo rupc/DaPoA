@@ -96,6 +96,7 @@ func (set *unconfirmedBlocks) Shift(height uint64) {
 		// Retrieve the next unconfirmed block and abort if too fresh
 		next := set.blocks.Value.(*unconfirmedBlock)
 		if next.index+uint64(set.depth) > height {
+			log.Info("[Unconfirmed Block] Too Fresh", "index", next.index, "depth", uint64(set.depth), "height", height)
 			break
 		}
 		// Block seems to exceed depth allowance, check for canonical status

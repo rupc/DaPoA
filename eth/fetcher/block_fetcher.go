@@ -303,7 +303,7 @@ func (f *BlockFetcher) FilterHeaders(peer string, headers []*types.Header, time 
 // FilterBodies extracts all the block bodies that were explicitly requested by
 // the fetcher, returning those that should be handled differently.
 func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transaction, uncles [][]*types.Header, time time.Time) ([][]*types.Transaction, [][]*types.Header) {
-	log.Trace("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles))
+	log.Info("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles))
 
 	// Send the filter channel to the fetcher
 	filter := make(chan *bodyFilterTask)
@@ -385,6 +385,7 @@ func (f *BlockFetcher) loop() {
 		case notification := <-f.notify:
 			// A block was announced, make sure the peer isn't DOSing us
 			blockAnnounceInMeter.Mark(1)
+			log.Info("A block was announced, make sure the peer isn't DOSing us", "number", notification.number, "origin", notification.origin)
 
 			count := f.announces[notification.origin] + 1
 			if count > hashLimit {
@@ -420,6 +421,7 @@ func (f *BlockFetcher) loop() {
 		case op := <-f.inject:
 			// A direct block insertion was requested, try and fill any pending gaps
 			blockBroadcastInMeter.Mark(1)
+			log.Debug("A direct block insertion was requested, try and fill any pending gaps", "origin", op.origin, "number", op.block.Header().Number)
 
 			// Now only direct block injection is allowed, drop the header injection
 			// here silently if we receive.
@@ -435,6 +437,7 @@ func (f *BlockFetcher) loop() {
 
 		case <-fetchTimer.C:
 			// At least one block's timer ran out, check for needing retrieval
+			log.Debug("At least one block's timer ran out, check for needing retrieval")
 			request := make(map[string][]common.Hash)
 
 			for hash, announces := range f.announced {
@@ -560,6 +563,7 @@ func (f *BlockFetcher) loop() {
 			// Headers arrived from a remote peer. Extract those that were explicitly
 			// requested by the fetcher, and return everything else so it's delivered
 			// to other parts of the system.
+			log.Debug("Headers arrived from a remote peer")
 			var task *headerFilterTask
 			select {
 			case task = <-filter:
@@ -650,6 +654,7 @@ func (f *BlockFetcher) loop() {
 
 		case filter := <-f.bodyFilter:
 			// Block bodies arrived, extract any explicitly requested blocks, return the rest
+			log.Debug("Block bodies arrived, extract any explicitly requested blocks, return the rest")
 			var task *bodyFilterTask
 			select {
 			case task = <-filter:
