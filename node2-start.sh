@@ -1,0 +1,2 @@
+#!/bin/bash
+geth attach --exec admin.nodeInfo.enr signer/geth.ipc | xargs -I{} geth --http --http.api "eth,net,web3,personal" --http.addr 0.0.0.0 --http.port 40003 --ws --ws.addr 0.0.0.0 --ws.port 40004 --ws.origins "*" --ws.api "eth,net,web3,personal" --datadir node2 --port 30309 --bootnodes {} --networkid 42342 --authrpc.port 8553 --allow-insecure-unlock --log.debug --rpc.enabledeprecatedpersonal --vmodule miner/*=4,ethapi/*=4,core/*=4,fetcher/*=4,eth/*=3
