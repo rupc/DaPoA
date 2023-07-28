@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -737,6 +738,17 @@ func (w *worker) taskLoop() {
 // and flush relative data to the database.
 func (w *worker) resultLoop() {
 	defer w.wg.Done()
+
+	signerFlag := os.Getenv("SIGNER")
+	var narwhalAdapter *extadapter.NarwhalAdapter
+
+	if signerFlag == "true" {
+		hostAddr := "0.0.0.0:60000"
+		gatewayAddr := "0.0.0.0:50051"
+		narwhalAdapter = extadapter.GetNarwhalAdapter(hostAddr, gatewayAddr)
+		log.Info("Detect SIGNER checked!")
+	}
+
 	for {
 		select {
 		case block := <-w.resultCh:
@@ -787,32 +799,36 @@ func (w *worker) resultLoop() {
 			}
 			log.Info("ExtraData", "len", len(block.Header().Extra), "data", hexutil.Encode(block.Header().Extra))
 
-			// recvMsg := extadapter.BroadcastBlock(block)
-			// rebuildHeader := block.Header()
-			// rebuildHeader.Extra = extadapter.EncodeExtraFieldwithNewSigs(rebuildHeader.Extra, recvMsg)
-			// endorsedBlock := block.WithSeal(rebuildHeader)
-
-			// Broadcast NewBlock's Body to Audit Chain networ
-			rebuildHeader := extadapter.BroadcastBlockAndRebuildHeader(block)
-			endorsedBlock := block.WithSeal(rebuildHeader)
+			err := narwhalAdapter.Broadcast(block)
+			// Perform furthur narwhal operations only when
+			if err == nil {
+				log.Warn("Wait narwhal-commit from gateway")
+				consensusOutput := narwhalAdapter.WaitForCommit()
+				block, err = narwhalAdapter.RebuildHeaderWithNarwhalSig(block, consensusOutput)
+				if err != nil {
+					panic(err)
+				}
+			} else {
+				log.Warn("Skip narwhal ordering operations")
+			}
 
 			// Broadcast NewBlock to internal subscriber, leading to deliver to external p2p network
-			w.mux.Post(core.NewMinedBlockEvent{Block: endorsedBlock})
+			w.mux.Post(core.NewMinedBlockEvent{Block: block})
 
 			// Commit block and state to database.
 			log.Info("Final Result Loop: WriteBlockAndSetHead", "receipts", len(task.receipts))
-			_, err := w.chain.WriteBlockAndSetHead(endorsedBlock, receipts, logs, task.state, true)
+			_, err = w.chain.WriteBlockAndSetHead(block, receipts, logs, task.state, true)
 			if err != nil {
 				log.Error("Failed writing block to chain", "err", err)
 				continue
 			}
 
 			rlpEncodedBlockSize := block.Size()
-			log.Info("Successfully sealed new block", "number", endorsedBlock.Number(), "sealhash", sealhash, "hash", hash,
+			log.Info("Successfully sealed new block", "number", block.Number(), "sealhash", sealhash, "hash", hash,
 				"elapsed", common.PrettyDuration(time.Since(task.createdAt)), "rlpBlkSize", rlpEncodedBlockSize)
 
 			// Insert the block into the set of pending ones to resultLoop for confirmations
-			w.unconfirmed.Insert(endorsedBlock.NumberU64(), endorsedBlock.Hash())
+			w.unconfirmed.Insert(block.NumberU64(), block.Hash())
 
 		case <-w.exitCh:
 			return
