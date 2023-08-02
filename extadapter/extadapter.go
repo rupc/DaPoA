@@ -21,12 +21,21 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	bls "github.com/protolambda/bls12-381-util"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
 
-var (
-	GatewayUrl = "http://141.223.121.31:50051"
+const (
+	ExtraAuditorSignature = crypto.SignatureLength
+	ExtraAuditorStartPos  = 120
+	PaddingBitsLength     = 4
+
+	TestKeyStore   = `{"address":"9f0ee8037891ad91c99104ba03edeb193ef182d8","crypto":{"cipher":"aes-128-ctr","ciphertext":"da115b7bf2e3dc247ddc12152304d41424d67189fae44c03dd4300b53091366a","cipherparams":{"iv":"4124b45f57fcfbd15706aef3c94be174"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"a94152c57962054f562714e59c018fbc18f4e84fc81bfe57abf3f15a5883eb40"},"mac":"9ad00d41a090cc9d942d3927e4629ecfd56e8975777a1cf3926b68863a468c07"},"id":"7794cce0-1862-4ed6-899c-cba0cc2aed74","version":3}`
+	TestPassword   = "sslab423"
+	TestPrivateKey = ""
+	TestPublicKey  = ""
+	GatewayUrl     = "http://141.223.121.31:50051"
 	// Urls = [...]string{"http://141.223.121.54:8080"}
 	// Urls                      = [...]string{"http://141.223.121.45:40001"}
 	proposalMethodName string = "auditchain_proposal"
@@ -219,17 +228,6 @@ func (na *NarwhalAdapter) Notify(ctx context.Context, req *pb.NarwhalCommitEvent
 
 	return resp, nil
 }
-
-const (
-	ExtraAuditorSignature = crypto.SignatureLength
-	ExtraAuditorStartPos  = 120
-	PaddingBitsLength     = 4
-
-	TestKeyStore   = `{"address":"9f0ee8037891ad91c99104ba03edeb193ef182d8","crypto":{"cipher":"aes-128-ctr","ciphertext":"da115b7bf2e3dc247ddc12152304d41424d67189fae44c03dd4300b53091366a","cipherparams":{"iv":"4124b45f57fcfbd15706aef3c94be174"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"a94152c57962054f562714e59c018fbc18f4e84fc81bfe57abf3f15a5883eb40"},"mac":"9ad00d41a090cc9d942d3927e4629ecfd56e8975777a1cf3926b68863a468c07"},"id":"7794cce0-1862-4ed6-899c-cba0cc2aed74","version":3}`
-	TestPassword   = "sslab423"
-	TestPrivateKey = ""
-	TestPublicKey  = ""
-)
 
 func extractSigAndVerify(extra, body, sig []byte) bool {
 	signature := extra[len(extra)-ExtraAuditorStartPos:]
@@ -441,6 +439,12 @@ func InvokeSubmitTransactionViaGRPC(url string, data []byte) error {
 	if propresp.SuccessOrFail == "fail" {
 		return fmt.Errorf("Failed to Submit Tx to narwhal gateway!")
 	}
+
+	return nil
+}
+
+func VerifySignature() error {
+	var sig bls.Signature
 
 	return nil
 }
