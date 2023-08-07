@@ -21,9 +21,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	bls "github.com/protolambda/bls12-381-util"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
@@ -88,10 +88,28 @@ func GetNarwhalAdapter(hostAddr, gatewayAddr string) *NarwhalAdapter {
 }
 
 func (na *NarwhalAdapter) CheckConnection() bool {
+	if na.gatewayConn == nil {
+		return false
+	}
+
+	healthClient := healthpb.NewHealthClient(na.gatewayConn)
+	response, err := healthClient.Check(context.Background(), &healthpb.HealthCheckRequest{})
+
+	if err != nil {
+		log.Error("Failed to check the connection to Narwhal Gateway")
+		return false
+	}
+
+	if response.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		log.Error("Narwhal Gateway is not serving")
+		return false
+	}
+
 	state := na.gatewayConn.GetState()
 	switch state {
 	case connectivity.Idle:
 	case connectivity.Shutdown:
+	case connectivity.TransientFailure:
 		return false
 	}
 	return true
@@ -114,7 +132,8 @@ func (na *NarwhalAdapter) encodeBlock(block *types.Block) ([]byte, []byte) {
 
 func (na *NarwhalAdapter) getGatewayClient() error {
 	log.Info("Trying to dial to narwhal gateway")
-	conn, err := grpc.Dial(na.gatewayAddress, grpc.WithInsecure(), grpc.WithBlock())
+	// conn, err := grpc.Dial(na.gatewayAddress, grpc.WithInsecure(), grpc.WithBlock())
+	conn, err := grpc.Dial(na.gatewayAddress, grpc.WithInsecure())
 	if err != nil {
 		return fmt.Errorf("Did not connect Narwhal Gateway, plz check the gateway server is running on %s!, err[%s]", na.gatewayAddress, err.Error())
 	}
@@ -416,7 +435,7 @@ func InvokeSubmitTransactionViaGRPC(url string, data []byte) error {
 
 	fmt.Println("connected to gateway")
 	if err != nil {
-		log.Error("Did not connecto Narwhal Gateway, plz check the gateway server is running on %s!, err[%s]", url, err.Error())
+		log.Error("Did not connect to Narwhal Gateway, plz check the gateway server is running on", "url", url, "err", err.Error())
 		return err
 	}
 
@@ -432,7 +451,7 @@ func InvokeSubmitTransactionViaGRPC(url string, data []byte) error {
 	fmt.Println("Start to submit Tx")
 	propresp, err := client.SubmitTransaction(ctx, proposal)
 	if err != nil {
-		log.Error("could not request: %v", err)
+		log.Error("could not request: err", err.Error())
 		return err
 	}
 
@@ -443,8 +462,6 @@ func InvokeSubmitTransactionViaGRPC(url string, data []byte) error {
 	return nil
 }
 
-func VerifySignature() error {
-	var sig bls.Signature
-
-	return nil
+func CheckSignerFlag() bool {
+	return os.Getenv("SIGNER") == "true"
 }
