@@ -1,0 +1,9 @@
+[package]
+name = "Basics"
+version = "0.0.1"
+
+[dependencies]
+Sui = { local = "../../../crates/sui-framework" }
+
+[addresses]
+basics = "0x0"

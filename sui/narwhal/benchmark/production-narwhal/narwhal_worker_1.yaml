@@ -1,0 +1,33 @@
+version: "3.9"
+networks:
+  mec:
+    external: true
+services:
+  worker_1:
+    depends_on:
+      - primary_1
+    image: mec-narwhal:latest
+    environment:
+      - NODE_TYPE=worker
+      - VALIDATOR_ID=1
+      - LOG_LEVEL=-vvv
+      - WORKER_ID=0
+    expose:
+      - "4000" # Port to listen on messages from our primary node
+      - "4001" # Port to listen for transactions from clients
+      - "4002" # Port to listen on messages from other worker nodes
+    ports:
+      - "7002:4001" # expose the port for the worker to accept transactions from clients
+    networks:
+      mec:     
+    volumes:
+      - ./validators:/validators
+      - ./validators/validator-1/logs:/home/logs
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - "node.hostname==bsp-devel"
+    hostname: worker_1

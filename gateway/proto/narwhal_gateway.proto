@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package narwhal_gateway;
+
+message Proposal {
+    bytes ethereum_block = 1;
+    bytes ethereum_header = 2;
+}
+message ProposalResponse {
+    string success_or_fail = 1;
+}
+
+message GatewayCertificate {
+    bytes header = 1;
+    bytes aggregated_signature = 2;
+}
+
+// Each Payload represents a committed ethereum block
+message GatewayBatch {
+    bytes payload = 1;
+}
+
+message ArrayOfCertificateAndBatch {
+    repeated GatewayCertificate certificate = 1;
+    repeated GatewayBatch batch = 2;
+
+}
+
+message GatewayCommittedSubDag {
+    /// The sequence of committed certificates.
+    repeated GatewayCertificate certificates = 1;
+
+    /// The leader certificate responsible of committing this sub-dag.
+    bytes leader_certificate = 2;
+
+    // SequenceNumber is the order determined in Narwhal
+    uint64 sequence_number = 3;
+}
+
+/// The output of Consensus, which includes all the batches for each certificate in the sub dag
+/// It is sent to the the Adapter to execute using EVM
+message GatewayConsensusOutput {
+    // SubDag is unmarshaled to CommittedSubDag
+    bytes sub_dag = 1;
+
+    // Batches is unmarshaled to ArrayOfCertificateAndBatch
+    repeated bytes batches = 2;
+
+    bytes leader_header_digest = 3;
+}
+
+message SubscribeConsensusOutputRequest {
+    string requestor_id = 1;
+}
+
+message DeliverConsensusOutputResponse {
+    string resp = 4;
+}
+
+message SubscribeConsensusOutputResponse {
+    uint64 narwhal_sequence_number = 1;
+    repeated uint64 eth_sequence_numbers = 2;
+    repeated bytes eth_block_digest = 3;
+}
+
+message NarwhalCommitEvent {
+    uint64 narwhal_sequence_number = 1;
+
+    repeated uint64 eth_sequence_numbers = 2;
+    repeated bytes eth_header_digest = 3;
+
+    DAGProof dag_proof = 4;
+    bytes extensions_= 5;
+}
+
+// DAG Proof is a leader certificate in narwhal context
+message DAGProof {
+    // leader_certificate is JSON objects (assumed to be unknown data type), intended to be read as gjson library
+    bytes leader_certificate = 1;
+    bytes header_digest = 2;
+}
+
+message NotifyResp {
+    string resp = 1;
+}
+
+message HeaderExtraPayload {
+    bytes extra_vanity = 1;
+    bytes poa_signature = 2;
+
+    enum NarwhalSignatureType {
+        ECDSA = 0;
+        BLS12381 = 1;
+    }
+
+    NarwhalSignatureType sig_type = 3;
+    repeated bytes narwhal_signatures = 4;
+
+    repeated bytes signer_addresses = 5;
+    bytes extensions_ = 6;
+}
+
+
+// NarwhalGateway is a bridge between Ethereum(Execution) and Narwhal(Consensus) 
+// i.e., executing narwhal-ordered Txs in EVM
+service NarwhalGateway {
+    // SubmitTransaction is invoked by Ethereum Geth to submit Tx
+    rpc SubmitTransaction(Proposal) returns (ProposalResponse);
+
+    // SubscribeConsensusOutput is invoked by Geth to subsribe ConsensusOutput 
+    rpc SubscribeConsensusOutput(SubscribeConsensusOutputRequest) returns (stream SubscribeConsensusOutputResponse);
+
+    // DeliverConsensusOutput is invoked by NarwhalNode to deliver ConsensusOutput
+    rpc DeliverConsensusOutput(GatewayConsensusOutput) returns (DeliverConsensusOutputResponse);
+}
+
+// CommitNotifier is intended to be notified commit event at Geth
+service CommitNotifier {
+    rpc Notify(NarwhalCommitEvent) returns (NotifyResp);
+}

@@ -1,0 +1,33 @@
+version: "3.9"
+networks:
+  mec:
+    external: true
+services:
+  primary_1:
+    image: mec-narwhal:latest
+    environment:
+      - NODE_TYPE=primary
+      - VALIDATOR_ID=1
+      - LOG_LEVEL=-vvv
+      - EXECUTION_BLOCK_TYPE=hyperledger_fabric # ethereum or hyperledger_fabric
+
+      # - CONSENSUS_DISABLED=--consensus-disabled
+    expose:
+      - "3000" # Port to listen on messages from other primary nodes
+      - "3001" # Port to listen on messages from our worker nodes
+    ports:
+      - "8001:8000" # expose the gRPC port to be publicly accessible
+      - "8101:8010" # expose the port listening to metrics endpoint for prometheus metrics
+    networks:
+      mec:    
+    volumes:
+      - ./validators:/validators
+      - ./validators/validator-1/logs:/home/logs
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      placement:
+        constraints:
+          - "node.hostname==bsp-devel"
+    hostname: primary_1

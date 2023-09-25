@@ -1,0 +1,681 @@
+syntax = "proto3";
+
+package bsp_transaction;
+import "google/protobuf/timestamp.proto";
+
+message Version {
+    uint64 BlockNumber = 1;
+    uint64 TxOffset = 2;
+}
+message VersionedValue {
+    bytes Value = 1;
+    Version Version = 2;
+}
+
+message StateBatch {
+    string Key = 1;
+    VersionedValue VV = 2;
+}
+
+message KVRead {
+    string key = 1;
+    bytes value = 2;
+    Version version = 3;
+}
+
+message KVWrite {
+    string key = 1;
+    bytes value = 2;
+    Version version = 3;
+    bool IsDelete = 4;
+}
+
+message TxInput {
+    string chaincode_id = 1;
+    string chaincode_version = 2;
+    repeated string chaincode_args = 3;
+    repeated KVRead reads = 4;
+}
+
+// VersionMap represents version mapping information between Edgechain and Mainchain
+// Recorded  when updating MainchainDB and used for MVCC on ReadSet
+message VersionMap {
+    string Key = 1;
+    Version EdgechainVersion = 2;
+    Version MainchainVersion = 3;
+}
+
+message TxOutput {
+    repeated KVWrite writes = 1;
+}
+
+message ChangeTriggerEvent {
+    ChangeTriggerCode Code = 1;
+    bytes Payload = 2; // Expected to be unmarshaled depending on trigger code
+    uint64 CurrViewNumber = 3;
+}
+
+
+enum ChangeTriggerCode {
+    INVALID_SIGNATURE = 0;
+    EdgechainSafety = 1;
+    EdgechainLiveness = 2;
+    MainchainSafety = 4;
+    MainchainLiveness = 3;
+}
+
+enum CCType {
+    CC_Noop = 0;
+    CC_Normal = 1;
+    CC_ECAuditTx = 2;
+    CC_MCAuditTx = 3;
+}
+
+// BspTransactionType is assigned to each BspTransaction before it is executed.
+enum BspTransactionType {
+    
+    IntraTx = 0;
+    // InterTx_ShouldLock
+    InterTx = 2;
+    InterTx_ShouldLock = 3;
+    // InterTx_NoLock 
+    InterTx_NoLock = 4;
+
+    MCAuditTx = 10;
+    ECAuditTx = 11;
+
+    LocalTx = 12;
+    GlobalTx = 13;
+    ReshardTx = 14;
+
+    NewView = 20;
+
+    // deprecated types
+    SyncTx = 30;
+
+    None = 100;
+}
+
+// BspTransaction is a transaction made by BSP,
+// enabling the re-execution-based verification (i.e., checkchain logic validation) by peers
+// Note that this is possible by containing TxInput and TxOutput
+message BspTransaction {
+    string ClientId = 1;
+    string TxId = 2;
+    uint64 Seq = 3;
+    TxInput Input = 4;
+    TxOutput Output = 5;
+    bytes Signature = 6;
+    bytes Proposal = 7;
+    BspTransactionType type = 10;
+    string Region = 11;
+    string ChainID = 12;
+    string ChaincodeId = 13;
+    bytes TxMetadata = 20;
+}
+
+// TxMetadata useful for catching latency for InterTx
+message TxMetadata {
+    float MetricSubmittedTime = 1;
+    float MetricMainchainArrivalTime = 2;
+    float MetricCommitTime = 3;
+}
+
+message CommitEventRequestByClientID {
+    string header = 1;
+    string client_id = 2;
+    bytes signature = 3;
+    string peer_id = 4;
+}
+
+enum CommitEventReplyType {
+    Speculative = 0; // A speculative response from BSP.
+    UP_TO_DATE = 1; // After the peer receives BSP block.
+    BFT = 2; // After the peer finishes a consensus on a range of blocks.
+    BFT_TX = 3;
+    TSA = 4; // After the peer found TSA signautre.
+    Early = 5; // early bsp-commit without full-validation (VSCC)
+}
+
+// EventUnit defines that this event is whether block-based notification or tx-based notification
+enum EventUnit {
+    Block = 0;
+    Tx = 1;
+}
+
+//
+message TxEventPayload {
+    string ClientID = 1;
+    string TxId = 2;
+    uint64 Number = 3;
+    uint64 Offset = 4;
+    ConsensusState State = 5; // 
+    string ActiveBSPAddress = 6;
+    google.protobuf.Timestamp issuedTimestamp = 7;
+    BspTransaction Transaction = 8;
+    bytes Extension = 10;
+}
+
+// Use this !
+message TxEvent {
+    bytes Payload = 1;
+    bytes Signature = 2; // signature over payload ...
+    bytes SignatureHeader = 3;// Signature Header
+}
+
+message TransactionCommitEvent {
+    string client_id = 1;
+    int32 index_in_block = 2;
+    string txid = 3;
+    int32 validation_code  = 4;
+    string chaincode_id = 5;
+    string chaincode_version = 6;
+    string peer_id = 7;
+    // number is a block number that this transaction is committed
+    uint64 number = 8;
+    bytes signature = 9;
+}
+
+message BFTEvent {
+    // below 4 fields used when block-based event notification
+    uint64 prepare_height = 2;
+    uint64 commit_height = 3;
+    uint64 latest_height = 4;
+    string peer_id = 5;
+    bytes signature = 6;
+}
+
+message BFTEventByTx {
+    // below 2 fields used for tx-based event notification 
+    string txid = 1; 
+    string client_id = 2;
+    string peer_id = 3;
+    bytes signature = 4;
+}
+
+message TSAEvent {
+    // An identity of TSA, i.e., one of the auditor's identity for now
+    string tsa_identity = 1;
+
+    // A block height that the TSA has endorsed
+    uint64 height = 2;
+    bytes signature = 3;
+}
+
+message CommitEventResponse {
+    CommitEventReplyType reply_type = 1; // One of TransactionCommitEvent(BSP=Up-to-date), BFTEvent, TSAEvent
+    bytes payload = 2; // Marshaled TransactionCommitEvent message... BftEvent / TsaEvent
+    bytes signature = 3;
+}
+
+
+// TxRequest by client to BSP
+message Proposal {
+    bytes Payload = 1;
+    bytes Signature = 2; // signature over payload ...
+    bytes SignatureHeader = 3;// Signature Header
+    /* bytes payload = 7; */
+}
+
+message ProposalBatch {
+    repeated Proposal Batches = 1;
+}
+
+message ProposalResponseBatch {
+    repeated ProposalResponse Batches = 1;
+}
+
+message ProposalPayload {
+    string ClientId = 1;
+    string TxId = 2;
+    string ChaincodeId = 3;
+    repeated string ChaincodeArgs = 4;
+    // extensionPayload reserved for MC-Audit Tx or Client-Policy
+    bytes ExtensionPaylod = 5;
+    google.protobuf.Timestamp timestamp = 6;
+}
+
+message SignatureHeader {
+    bytes creator = 1; // serializedIdentity
+    bytes nonce = 2;
+}
+
+// TxResponse by BSP to client
+message ProposalResponse {
+    bytes payload = 1;
+    bytes signature = 2;
+    bytes signature_header = 3;
+    string status = 4;
+}
+
+message InitializeRequest {
+
+}
+
+message HelloRequest {
+    string msg = 1;
+}
+
+message HelloResponse {
+    string msg = 1;
+}
+
+message AuditTransaction {
+    bytes payload = 1;
+    bytes signature = 2;
+    bytes signature_header = 3;
+
+    // metadata unmarshaled to AuditTransactionMetadata
+    bytes metadata = 4;
+}
+
+enum ReshardType {
+    Local2Global_Interference = 0; // Reshard Step 1:  Changing 
+    Local2Global_Handover = 1; // Reshard Step 1: 
+    Global2Local_Interference = 2; // Reshard Step2: Reshard to Home Shard
+    Global2Local_Handover_Src = 3; // Reshard Step2: Deletion at Src Shard
+    Global2Local_Handover_Dst = 4; // Reshard Step2: Creation at Dst Shard
+}
+message VersionPairedWrite {
+    KVWrite Write = 1;
+    Height EdgechainHeight = 2;
+    Height MainchainHeight = 3;
+    ReshardType ReshardType = 4;
+}
+
+message AuditTransactionMetadata {
+    // ECVersionFilledWrites is used to fill nil-valued EC-version which is incurred by Inter Tx
+    // And is applied on processing main chain 
+    /* repeated VersionPairedWrite ECVersionFilledWrites = 1; */
+
+    repeated CrossUpdate ReshardAccepts = 3;
+}
+
+enum AuditType {
+    EC = 0;
+    MC = 1;
+    UNKNOWN = 99;
+}
+
+message AuditTransactionPayload {
+    AuditType type = 1; // Mainchain or Edgechain
+    string ChainID = 2;
+    string RegionID = 3; // Region ID the chainID belongs to
+    string ActiveID = 4; // BSP ID
+    repeated string StanbyIDs = 5;
+    string TxId = 6;
+    uint64 Seq = 7; // meaningful when the Audit Tx type is MC-Audit-Tx
+
+    uint64 Number = 10; // current block number
+    bytes Hash = 11; // Current block Hash
+    bytes PrevHash = 12; // Previous block hash
+
+    string Member = 13; // Auditor ID
+
+    // MerkleRootHash
+    bytes MerkleRootHash = 14;
+
+    bytes CreatorSignature = 15;
+    bytes extension = 20;
+}
+
+message Height {
+    uint64 BlockNumber = 1;
+    uint64 TxOffset = 2;
+}
+
+enum ReshardStatus {
+    ReshardProposal = 0;
+    ReshardAccept = 1;
+    ReshardFinal = 2;
+}
+
+message ReshardEntry {
+    string Key = 1;
+    bytes Value = 2;
+    Height MainchainHeight = 3;
+    string Src = 4;
+    string Dst = 5;
+    ReshardStatus Tag = 6; 
+}
+
+// CrossUpdate reflects writes for Inter Tx or Interfered Intra Tx
+message CrossUpdate {
+    string TxId = 1;
+    // Interfered represents whether this tx is inter tx (false) or interfered intra tx (true)
+    bool Interfered = 2;
+    ConsensusState State = 3;
+    string ChaincodeId = 4;
+    repeated KVWrite Writes = 5;
+    Height MainchainHeight = 6;
+    /* ReshardStatus Rstatus = 7;  */
+    /* string Src = 8; */
+    /* string Dst = 9; */
+    repeated ReshardEntry Entries = 10;
+}
+
+// AuditTransactionExtension is mainchain (MC-AuditTx)
+message AuditTransactionExtension  {
+    repeated CrossUpdate CrossUpdates = 3;
+
+    MCBuildParameter MCparameters = 4;
+    MCHeader MainchainHeader = 5;
+}
+
+// ECProof would be a merkle proof that consists of a set of ec-blocks, each from edge chains
+/* message ECProof { */
+/*     repeated BlockHeaderWithProv headers = 3; */
+/* } */
+
+/* message BlockHeaderWithProv { */
+
+/* } */
+
+message MCBuildParameter {
+    OrderingMethod OrderingMethod = 1;
+    bytes BuildParameter = 2; // Method-specific parameters, (i.e., BuildParameterOfIndexBasedOrdering or BuildParameterDependencyGraphBasedOrdering)
+}
+
+// assumes that all edge chains are euqally generating their blocks
+message BuildParameterOfIndexBasedOrdering {
+    uint64 BucketSize = 1; 
+    /* uint64 StartBlockNumber = 2;  */
+    string MCTimeout = 3;
+}
+
+message BuildParameterOfDependencyGraphBasedReOrdering {
+    string ReOrderingMethod = 1;
+}
+
+
+enum OrderingMethod {
+    IndexBasedOrdering = 0;
+    DependencyGraphBasedOrdering = 1;
+}
+
+
+
+message ConsensusState {
+    enum Result {
+        Commit = 0;
+        Abort = 1;
+    }
+
+    enum Level {
+        EC_Spec = 0;
+        EC_Ordered = 1;
+        EC_Prepared = 2;
+        EC_Commit = 3;
+        MC_Ordered = 4;
+        MC_Commit = 5;
+        MC_Progress = 6;
+        TSA = 10;
+        EC_ViewChangeTriggered = 21;
+        EC_ViewChangeFinished = 22;
+    }
+    
+    Level level = 1;
+    Result result = 2;
+}
+
+message InterTxResult {
+    ConsensusState State = 1;
+    BspTransaction BspTx = 2;
+    /* string TxID = 2; */
+    /* repeated KVRead reads = 3; */
+    /* repeated KVWrite writes = 4; */
+
+    /* string ChainID = 5; */
+    /* string RegionID = 6; // Region ID the chainID belongs to */
+    /* string ActiveID = 7; // BSP ID */
+    /* Version MCVersion = 8; */
+    /* bytes metadata = 9;  // performance metrics */
+
+    /* Version ECHeight = 10; */
+    /* string ClientID = 11; */
+}
+
+message MCHeader {
+    // Mainchain Build Round
+    uint64 Round = 1;
+    // Mainchain Block Number
+    uint64 Number = 2;
+    // Mainchain Block Header hash
+    bytes Hash = 3;
+    // Mainchain Previous Header hash
+    bytes PrevHash = 4;
+    // Merkle root hash over all EC-Headers
+    bytes MerkleRootHash = 5;
+    // Mainchain block build configurations
+    bytes MCBuildParameter = 6;
+    // Set of ECHeaders (ordered by BSP name, block#)
+    repeated ECHeader ECHeaders = 7;
+    // Set of Non-EC Commit Blocks (for detecting Block-witholding attack), 
+    // Blocks corresponding to NonCommitBlocks not appear in MC-Block body
+    repeated ECHeader NonCommitBlockHeaders  = 8; 
+
+    repeated string ActiveGroup = 9;
+    repeated string StandbyGroup = 10;
+}
+
+// OrderedBlocks contains an ordered local blocks for narwhal dag integration.
+message OrderedBlocks {
+    uint64 sequenceNumber = 1;
+    repeated bytes blocks = 2;
+}
+
+message MCBlock {
+    MCHeader Header = 1;
+    repeated ECBlock blocks = 2;
+}
+
+message ECHeader {
+    // Marshaled HLF common.Header
+    bytes Header = 1;
+    string Region = 2;
+}
+
+message ECBlock {
+    // Marshaled HLF common.Block
+    bytes Block = 1; 
+    //  Name of the region that this block belongs to. (e.g., edgechain1)
+    string Region = 2;
+}
+
+message MCResponse {
+    string msg = 1;
+}
+
+message DeliverRequest {
+    bytes Request = 1; // *common.Envelope
+    string From = 2;
+}
+
+message MigrateRequest {
+    bytes Payload = 1;
+    bytes Signature = 2;
+    bytes SignatureHeader = 3;
+
+    // Client-side debugging field
+    uint32 StreamFinal = 10;
+}
+
+message MigrateRequestPayload {
+    uint64 StartBlkNum = 1;
+    uint64 HighestPreparedHeight = 2;
+    uint64 CurrentBlockNum = 3;
+    ECBlock Block = 4;
+
+    // Expected to be unmarshaled to NewViewTx
+    bytes NewViewTxBytes = 5; 
+}
+
+message MigrateRequestStatePayload {
+    TxOutput state = 1;
+}
+
+message MigrateResponse {
+    string Msg = 1; 
+}
+
+message HeartbeatPayload {
+    string Timeout = 1;
+    string Region = 2;
+}
+
+message HeartbeatTransaction {
+    bytes Payload = 1;
+    bytes Signature = 2;
+    bytes SignatureHeader = 3;
+}
+
+
+message Policy {
+    ConsensusState.Level level = 1;
+    uint64 QuorumSize = 2;
+}
+
+message AggregatorSubscribeRequest {
+    string SubscriberId = 1;
+    string EventSourceId = 2;
+    Policy  Policy = 3;
+}
+
+message AggregatorResponse {
+    string TxId = 1;
+    string ClientId = 2;
+    string Status = 3;
+}
+
+message WorkerMessage {
+    string After = 1;
+    string Status = 2;
+    int32 SubmitterThreads = 3;
+    int32 ReceiverThreads = 4;
+    int32 BatchSize = 5;
+    int32 NumAccounts = 6;
+    string SubmitDelay = 7;
+
+    repeated string Args = 10;
+}
+
+message WaitForEventRequest {
+    string TxId = 1;
+    string ClientId = 2;
+    Policy Policy = 3;
+}
+
+message WaitForEventResponse {
+    string Status = 1;
+    TxEventPayload TxEventPayload = 2;
+}
+
+message ActiveExecutors {
+    repeated string ExecutorAddress = 1;
+    string RemovedAddress = 2;
+}
+
+message ActiveExecutorsResp {
+    string Resp = 1;
+}
+
+message ReadPolicy {
+    int32 GatheredFrom = 1; // e.g., 0 for BSP, 1 for 1 Auditor, 2 for 2 Auditors
+}
+
+// Single query request
+message QueryRequest {
+    string ChannelID = 1;
+    string ChaincodeID = 2;
+    string Key = 3;
+    bytes Extension = 4; // Unmarshaled to ReadPolicy
+}
+
+// Single query resp
+message QueryResponse {
+    string Key = 1;
+    bytes Value = 2;
+}
+
+message MainchainBlockDeliverRequest {
+    string RequestorId = 1;
+    string Region = 2;
+}
+
+message MainchainBlockDeliverResponse {
+    MCBlock MCBlock = 1;
+}
+
+message DeploySmartContractRequest {
+    bytes ChaincodeDeploymentSpec = 1; // Unmarshal to peer.ChaincodeDeploymentSpec
+}
+
+message DeploySmartContractResponse {
+    string Msg = 1;
+}
+
+message SmartContractArgs {
+    string ChaincodeId = 1;
+    repeated string Args = 2;
+    Policy Policy = 3;
+}
+
+message ChaincodeEvent {
+    string ChaincodeID = 1;
+    string TxID = 2;
+    string EventName = 3;
+    bytes Payload = 4;
+}
+
+message EnvWrap {
+    bytes EnvelopeBytes = 1;
+}
+message EnvelopeBatch {
+    repeated EnvWrap Batch = 1;
+}
+
+
+// Defines communication interface of BSP blockchain nodes, including BSP Orderer, BSP Executor, BSP Auditor
+// For dev-only purpose, those interfaces are not separated for now.
+service CommitNotifier {
+  // auditor
+  rpc SubscribeTxCommitEventByClientID (CommitEventRequestByClientID) returns (stream TxEvent);
+  rpc MigrateState (stream MigrateRequest) returns (MigrateResponse);
+
+  // orderer
+  rpc Deliver(DeliverRequest) returns (stream ECBlock);
+  rpc MigrateBlocks (stream MigrateRequest) returns (MigrateResponse);
+
+  // executor
+  rpc ProcessMCBlock(MCBlock) returns  (MCResponse);
+  rpc ProcessOrderedBlocks(OrderedBlocks) returns  (MCResponse);
+  rpc UpdateActiveExecutors (ActiveExecutors) returns (ActiveExecutorsResp);
+  rpc Execute (Proposal) returns (ProposalResponse);
+  rpc ExecuteBatch (ProposalBatch) returns (ProposalResponseBatch);
+
+
+  rpc Ping (HelloRequest) returns (HelloResponse);
+}
+
+service QueryExecutor {
+    rpc Query(QueryRequest) returns (QueryResponse);
+}
+
+
+service Aggregator {
+    rpc RegisterClientWithPolicy (AggregatorSubscribeRequest) returns (stream AggregatorResponse);
+    rpc ProcessProposal(Proposal)  returns (ProposalResponse);
+
+    rpc SubmitTransaction(SmartContractArgs) returns (WaitForEventResponse);
+    rpc WaitForEvent(WaitForEventRequest) returns (WaitForEventResponse);
+    rpc StartWorkload(WorkerMessage) returns(WorkerMessage);
+}
+
+service DeploySmartContract {
+    rpc DeploySmartContract(DeploySmartContractRequest) returns (DeploySmartContractResponse);
+}
+
+service MainchainService {
+    rpc DeliverMainchainBlock(MainchainBlockDeliverRequest) returns (stream MainchainBlockDeliverResponse);
+}
+

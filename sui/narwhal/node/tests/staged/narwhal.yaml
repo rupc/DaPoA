@@ -1,0 +1,96 @@
+---
+Batch:
+  STRUCT:
+    - transactions:
+        SEQ:
+          SEQ: U8
+    - metadata:
+        TYPENAME: Metadata
+BatchDigest:
+  NEWTYPESTRUCT:
+    TUPLEARRAY:
+      CONTENT: U8
+      SIZE: 32
+Certificate:
+  STRUCT:
+    - header:
+        TYPENAME: Header
+    - aggregated_signature:
+        TUPLEARRAY:
+          CONTENT: U8
+          SIZE: 48
+    - signed_authorities: BYTES
+    - metadata:
+        TYPENAME: Metadata
+CertificateDigest:
+  NEWTYPESTRUCT:
+    TUPLEARRAY:
+      CONTENT: U8
+      SIZE: 32
+Header:
+  STRUCT:
+    - author:
+        TUPLEARRAY:
+          CONTENT: U8
+          SIZE: 96
+    - round: U64
+    - epoch: U64
+    - created_at: U64
+    - payload:
+        SEQ:
+          TUPLE:
+            - TYPENAME: BatchDigest
+            - TUPLE:
+                - U32
+                - U64
+    - parents:
+        SEQ:
+          TYPENAME: CertificateDigest
+    - signature:
+        TUPLEARRAY:
+          CONTENT: U8
+          SIZE: 48
+HeaderDigest:
+  NEWTYPESTRUCT:
+    TUPLEARRAY:
+      CONTENT: U8
+      SIZE: 32
+Metadata:
+  STRUCT:
+    - created_at: U64
+WorkerIndex:
+  NEWTYPESTRUCT:
+    MAP:
+      KEY: U32
+      VALUE:
+        TYPENAME: WorkerInfo
+WorkerInfo:
+  STRUCT:
+    - name:
+        TUPLEARRAY:
+          CONTENT: U8
+          SIZE: 32
+    - transactions: BYTES
+    - worker_address: BYTES
+WorkerOthersBatchMessage:
+  STRUCT:
+    - digest:
+        TYPENAME: BatchDigest
+    - worker_id: U32
+WorkerOurBatchMessage:
+  STRUCT:
+    - digest:
+        TYPENAME: BatchDigest
+    - worker_id: U32
+    - metadata:
+        TYPENAME: Metadata
+WorkerSynchronizeMessage:
+  STRUCT:
+    - digests:
+        SEQ:
+          TYPENAME: BatchDigest
+    - target:
+        TUPLEARRAY:
+          CONTENT: U8
+          SIZE: 96
+

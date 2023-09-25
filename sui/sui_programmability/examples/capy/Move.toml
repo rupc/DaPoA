@@ -1,0 +1,10 @@
+[package]
+name = "sui-capybaras"
+version = "0.1.0"
+
+[dependencies]
+Sui = { local = "../../../crates/sui-framework" }
+
+[addresses]
+capy = "0x0"
+me = "0x0"
