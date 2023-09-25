@@ -10,6 +10,23 @@ A simple demonstration of executing Solidity smart contracts in a metamask-enanb
 ## Flow
 ![Flow](./figs/solidity-narwhal-flow.png)
 
+## Video 
+[Demo Video](https://youtu.be/GzcjNMDDeUE)
+
+
+## Notes
+Originally, this work started as a small side project, taking into consideration the potential to offer high-performance Ethereum solidity smart contract execution through a DAG-based Consensus that enables high throughput. Work is still in progress for improvements beyond this simple demo.
+
+
+
+
+
+
+
+
+
+
+
  
 
 
