@@ -1,4 +1,12 @@
-# solidity-narwhal
+# DaPoA
+DaPoA is an effort to enhance Ethereum PoA Clique algorithm using DAG-based BFT Consensus.
+
+# Presentations
+- [slide](./ICBC2024_presentationv_final.pdf)
+- [video](preparing)
+- [paper](preparing)
+
+# Implementations & Demo
 A simple demonstration of executing Solidity smart contracts in a metamask-enanbled NFT marketplace, using the sui/narwhal as a consensus engine. Ideal for understanding interactions between dapp, contract, geth, and narwhal. 
 
 - [go-ethereum](https://github.com/ethereum/go-ethereum): An Ethereum client for executing Solidity contracts on EVM, communicating with the gateway and end users. 
@@ -10,12 +18,8 @@ A simple demonstration of executing Solidity smart contracts in a metamask-enanb
 ## Flow
 ![Flow](./figs/solidity-narwhal-flow.png)
 
-## Video 
+## Demo Video 
 [Demo Video](https://youtu.be/GzcjNMDDeUE)
-
-
-## Notes
-Originally, this work started as a small side project, taking into consideration the potential to offer high-performance Ethereum solidity smart contract execution through a DAG-based Consensus that enables high throughput. The work is still in progress as in a [technical paper](./technical-paper.pdf) for improvements beyond this simple demo.
 
 
 
