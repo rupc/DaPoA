@@ -1,5 +1,8 @@
 # DaPoA
-DaPoA is an effort to enhance Ethereum PoA Clique algorithm using DAG-based BFT Consensus.
+DaPoA is an effort to enhance Ethereum PoA Clique algorithm using DAG-based BFT Consensus, presented at IEEE International Conference on Blockchain and Cryptocurrency (ICBC) 2024, Dublin, Ireland.
+
+# Idea
+<img width="790" alt="image" src="https://github.com/rupc/DaPoA/assets/13694069/af663c66-1089-4077-b4f8-7d90f0daa829">
 
 # Presentations
 - [slide](./ICBC2024_presentationv_final.pdf)
