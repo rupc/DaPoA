@@ -6,8 +6,7 @@ DaPoA is an effort to enhance Ethereum PoA Clique algorithm using DAG-based BFT 
 
 # Presentations
 - [slide](./ICBC2024_presentationv_final.pdf)
-- [video](preparing)
-- [paper](preparing)
+
 
 # Implementations & Demo
 A simple demonstration of executing Solidity smart contracts in a metamask-enanbled NFT marketplace, using the sui/narwhal as a consensus engine. Ideal for understanding interactions between dapp, contract, geth, and narwhal. 
